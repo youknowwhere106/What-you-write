@@ -32,9 +32,7 @@ import { useDictionary } from '@/hooks/useDictionary'
 import useNoteStore from '@/store/noteStore'
 import AIChatPanel from '@/components/ai/AIChatPanel'
 import SynonymToolbar from '@/components/editor/SynonymToolbar'
-import SynonymClouds from '@/components/editor/SynonymClouds'
 import FloatingMeaningPopup from '@/components/editor/FloatingMeaningPopup'
-import toast from 'react-hot-toast'
 
 const colorMap = {
   yellow: { bg: 'bg-note-yellow', text: 'text-note-yellow-dark' },
@@ -80,17 +78,14 @@ export default function NotePage() {
   const [shareEmail, setShareEmail] = useState('')
   const [showShare, setShowShare] = useState(false)
 
-  // Synonym feature state
+  // Word lookup feature state
   const [selectedWord, setSelectedWord] = useState('')
   const [lookupWord, setLookupWord] = useState('')
   const [toolbarPos, setToolbarPos] = useState(null)
   const [showToolbar, setShowToolbar] = useState(false)
   const [showMeaning, setShowMeaning] = useState(false)
-  const [showClouds, setShowClouds] = useState(false)
   const [meaningPos, setMeaningPos] = useState(null)
-  const [cloudsPos, setCloudsPos] = useState(null)
   const editorWrapperRef = useRef(null)
-  const selectionRangeRef = useRef(null)
 
   const { data: dictData, isLoading: dictLoading } = useDictionary(lookupWord)
 
@@ -139,32 +134,24 @@ export default function NotePage() {
         const word = extractWord(text)
         if (!word) return
 
-        // Get TipTap selection range for replacement
-        const { from, to } = editor.state.selection
-        if (from === to) return
-
         setSelectedWord(word)
-        selectionRangeRef.current = { from, to }
 
-        // Calculate position relative to editor wrapper
-        const wrapperEl = editorWrapperRef.current
-        if (!wrapperEl) return
-
+        // Calculate viewport coordinates for the toolbar
         const range = domSelection.getRangeAt(0)
         const rect = range.getBoundingClientRect()
-        const wrapperRect = wrapperEl.getBoundingClientRect()
 
-        const x = rect.left + rect.width / 2 - wrapperRect.left
-        const y = rect.top - wrapperRect.top - 10
+        // vx = center of the word, vy = just above the word
+        const vx = rect.left + rect.width / 2
+        const vy = rect.top - 10
 
-        setToolbarPos({ x, y })
+        setToolbarPos({ vx, vy })
         setShowToolbar(true)
       })
     }
 
     // Hide toolbar on single click / cursor move (but not when popups are open)
     const handleClick = () => {
-      if (!showMeaning && !showClouds) {
+      if (!showMeaning) {
         setShowToolbar(false)
       }
     }
@@ -175,24 +162,22 @@ export default function NotePage() {
       editorEl.removeEventListener('dblclick', handleDoubleClick)
       editorEl.removeEventListener('click', handleClick)
     }
-  }, [editor, showMeaning, showClouds])
+  }, [editor, showMeaning])
 
   // ─── Dismiss on outside click ───
   useEffect(() => {
     const handleClick = (e) => {
       if (!editorWrapperRef.current) return
       const target = e.target
-      // Don't dismiss if clicking inside synonym UI
+      // Don't dismiss if clicking inside toolbar or meaning popup
       if (
         target.closest('.synonym-toolbar') ||
-        target.closest('.meaning-popup') ||
-        target.closest('.synonym-cloud')
+        target.closest('.meaning-popup')
       ) return
 
-      // Dismiss all synonym UI if clicking elsewhere
-      if (showMeaning || showClouds) {
+      // Dismiss meaning UI if clicking elsewhere
+      if (showMeaning) {
         setShowMeaning(false)
-        setShowClouds(false)
         setShowToolbar(false)
         setLookupWord('')
       }
@@ -200,7 +185,7 @@ export default function NotePage() {
 
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [showMeaning, showClouds])
+  }, [showMeaning])
 
   // ─── Auto-dismiss meaning popup after 2 seconds ───
   useEffect(() => {
@@ -212,61 +197,21 @@ export default function NotePage() {
     return () => clearTimeout(timer)
   }, [showMeaning, dictLoading, dictData])
 
-  const dismissAll = useCallback(() => {
-    setShowToolbar(false)
-    setShowMeaning(false)
-    setShowClouds(false)
-    setLookupWord('')
-  }, [])
-
   const handleMeaning = useCallback(() => {
     if (!selectedWord) return
     setLookupWord(selectedWord)
     setShowToolbar(false)
-    setShowClouds(false)
 
-    // Position popup below toolbar
+    // Position popup below toolbar in viewport coordinates
     if (toolbarPos) {
-      setMeaningPos({ x: toolbarPos.x, y: toolbarPos.y + 40 })
+      setMeaningPos({
+        vx: toolbarPos.vx,
+        vy: toolbarPos.vy + 40,
+        wordVy: toolbarPos.vy,
+      })
     }
     setShowMeaning(true)
   }, [selectedWord, toolbarPos])
-
-  const handleSynonyms = useCallback(() => {
-    if (!selectedWord) return
-    setLookupWord(selectedWord)
-    setShowToolbar(false)
-    setShowMeaning(false)
-
-    // Position clouds around the selected word
-    if (toolbarPos) {
-      setCloudsPos({ x: toolbarPos.x, y: toolbarPos.y + 20 })
-    }
-    setShowClouds(true)
-  }, [selectedWord, toolbarPos])
-
-  const handleReplaceWord = useCallback((synonym) => {
-    if (!editor || !isEditing || !selectionRangeRef.current) {
-      toast('Switch to edit mode to replace words', { icon: '✏️' })
-      return
-    }
-
-    const { from, to } = selectionRangeRef.current
-
-    // Verify the selection is still valid
-    if (from >= 0 && to <= editor.state.doc.content.size) {
-      editor
-        .chain()
-        .focus()
-        .setTextSelection({ from, to })
-        .deleteSelection()
-        .insertContent(synonym)
-        .run()
-      toast.success(`Replaced with "${synonym}"`)
-    }
-
-    dismissAll()
-  }, [editor, isEditing, dismissAll])
 
   const handleSave = () => {
     updateNote.mutate(
@@ -512,16 +457,15 @@ export default function NotePage() {
               </div>
             )}
 
-            {/* Content + Synonym Feature */}
+            {/* Content + Word Lookup */}
             <div ref={editorWrapperRef} className={`tiptap-editor p-6 ${colors.text} min-h-[300px] synonym-feature-wrapper`}>
               <EditorContent editor={editor} />
 
-              {/* Synonym Toolbar — floats near selection */}
+              {/* Meaning Toolbar — floats near selection */}
               <SynonymToolbar
                 position={toolbarPos}
-                visible={showToolbar && !showMeaning && !showClouds}
+                visible={showToolbar && !showMeaning}
                 onMeaning={handleMeaning}
-                onSynonyms={handleSynonyms}
               />
 
               {/* Meaning Popup */}
@@ -531,16 +475,6 @@ export default function NotePage() {
                 position={meaningPos}
                 visible={showMeaning}
                 onClose={() => { setShowMeaning(false); setLookupWord('') }}
-              />
-
-              {/* Synonym Clouds */}
-              <SynonymClouds
-                synonyms={dictData?.synonyms || []}
-                isLoading={dictLoading}
-                position={cloudsPos}
-                visible={showClouds}
-                onReplace={handleReplaceWord}
-                onDismiss={() => { setShowClouds(false); setLookupWord('') }}
               />
             </div>
 

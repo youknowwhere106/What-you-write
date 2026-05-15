@@ -14,7 +14,7 @@ async def lookup_word(
     word: str,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Look up definition and synonyms for a word."""
+    """Look up the definition of a word."""
     word = word.strip().lower()
     if not word or len(word) > 50 or not word.isalpha():
         raise HTTPException(
@@ -24,10 +24,10 @@ async def lookup_word(
 
     result = await dictionary_service.lookup(word)
 
-    if not result["definition"] and not result["synonyms"]:
+    if not result["definition"]:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No results found for '{word}'.",
+            detail=f"No definition found for '{word}'.",
         )
 
     return result

@@ -1,21 +1,55 @@
+import { useRef, useLayoutEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, BookOpen, Loader2 } from 'lucide-react'
 
 export default function FloatingMeaningPopup({ data, isLoading, position, visible, onClose }) {
-  return (
+  const ref = useRef(null)
+  const [style, setStyle] = useState({})
+
+  useLayoutEffect(() => {
+    if (!visible || !position || !ref.current) return
+    const el = ref.current
+    const rect = el.getBoundingClientRect()
+    const margin = 10
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+
+    // position.vx / position.vy are viewport coordinates (center-x, top-y)
+    let left = position.vx - rect.width / 2
+    let top = position.vy
+
+    // Clamp horizontally
+    if (left < margin) left = margin
+    if (left + rect.width > vw - margin) left = vw - margin - rect.width
+
+    // Clamp vertically: if overflowing bottom, flip above the word
+    if (top + rect.height > vh - margin) {
+      // Flip above: toolbarGap (40px from word to popup) + popup height + extra gap
+      top = position.wordVy - rect.height - 8
+      // If flipped also overflows top, clamp to top margin
+      if (top < margin) top = margin
+    }
+    if (top < margin) top = margin
+
+    setStyle({ left: `${left}px`, top: `${top}px` })
+  }, [visible, position, data, isLoading])
+
+  return createPortal(
     <AnimatePresence>
       {visible && position && (
         <motion.div
+          ref={ref}
           initial={{ opacity: 0, scale: 0.85, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 8 }}
           transition={{ type: 'spring', stiffness: 400, damping: 25 }}
           className="meaning-popup"
           style={{
-            position: 'absolute',
-            left: `${position.x}px`,
-            top: `${position.y}px`,
-            zIndex: 110,
+            position: 'fixed',
+            left: style.left || `${position.vx}px`,
+            top: style.top || `${position.vy}px`,
+            zIndex: 10001,
           }}
         >
           <div className="meaning-popup-inner">
@@ -60,6 +94,7 @@ export default function FloatingMeaningPopup({ data, isLoading, position, visibl
           </div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }

@@ -144,19 +144,17 @@
   margin: 0.5rem 0;
 }
 
-/* ─── Smart Synonym Clouds ─── */
+/* ─── Word Lookup Feature ─── */
 
 /* Floating action toolbar */
 .synonym-toolbar {
-  transform: translateX(-50%);
   filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.15));
 }
 
 .synonym-toolbar-inner {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 6px;
+  padding: 4px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(20px);
@@ -187,16 +185,9 @@
   color: #7c3aed;
 }
 
-.synonym-toolbar-divider {
-  width: 1px;
-  height: 18px;
-  background: rgba(0, 0, 0, 0.1);
-  margin: 0 2px;
-}
 
 /* Meaning popup */
 .meaning-popup {
-  transform: translateX(-50%);
   filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.25));
 }
 
@@ -286,75 +277,7 @@
   font-style: italic;
 }
 
-/* Synonym clouds */
-.synonym-clouds-container {
-  pointer-events: none;
-}
-
-.synonym-cloud {
-  position: absolute;
-  padding: 6px 16px;
-  border-radius: 50px;
-  white-space: nowrap;
-  pointer-events: auto;
-  transform: translate(-50%, -50%);
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.12),
-    0 0 20px rgba(168, 85, 247, 0.08);
-  overflow: hidden;
-  transition: box-shadow 0.2s;
-}
-
-.synonym-cloud:hover {
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.18),
-    0 0 30px rgba(168, 85, 247, 0.18);
-}
-
-.synonym-cloud-text {
-  position: relative;
-  z-index: 2;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
-  letter-spacing: 0.02em;
-}
-
-.synonym-cloud-glow {
-  position: absolute;
-  inset: -4px;
-  z-index: 1;
-  opacity: 0.25;
-  filter: blur(8px);
-  border-radius: 50px;
-}
-
-/* Glow ring behind clouds */
-.synonym-clouds-glow-ring {
-  position: absolute;
-  width: 200px;
-  height: 200px;
-  left: -100px;
-  top: -100px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(168, 85, 247, 0.12) 0%,
-    rgba(168, 85, 247, 0.04) 40%,
-    transparent 70%
-  );
-  pointer-events: none;
-}
-
-.synonym-clouds-loading {
-  position: absolute;
-  left: -12px;
-  top: -12px;
-  pointer-events: none;
-}
-
-/* Synonym feature container — relative positioning anchor */
+/* Word lookup feature container — relative positioning anchor */
 .synonym-feature-wrapper {
   position: relative;
 }

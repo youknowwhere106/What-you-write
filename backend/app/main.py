@@ -50,6 +50,11 @@ app.include_router(search_router, tags=["Search"])
 app.include_router(dictionary_router, tags=["Dictionary"])
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 @app.get("/about")
 async def about():
     return {

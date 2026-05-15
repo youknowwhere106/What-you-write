@@ -22,7 +22,7 @@ export default function AuthPage() {
       login(res.data.access_token, res.data.user)
       toast.success(isLogin ? 'Welcome back!' : 'Account created!')
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Something went wrong')
+      toast.error(err.response?.data?.message || err.response?.data?.detail || 'Something went wrong')
     } finally {
       setLoading(false)
     }
@@ -123,7 +123,7 @@ export default function AuthPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  minLength={6}
+                  minLength={8}
                   className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/25 transition-all"
                 />
               </div>

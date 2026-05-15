@@ -9,7 +9,22 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class NoteNotFoundError(ValueError):
+    pass
+
+
+class UserNotFoundError(ValueError):
+    pass
+
+
+class AlreadySharedError(ValueError):
+    pass
+
+
 class NoteService:
+    NoteNotFoundError = NoteNotFoundError
+    UserNotFoundError = UserNotFoundError
+    AlreadySharedError = AlreadySharedError
     @staticmethod
     async def create_note(
         title: str, content: str, owner_id: str, color: str = "yellow"
@@ -23,7 +38,7 @@ class NoteService:
 
     @staticmethod
     async def get_notes(
-        owner_id: str, page: int = 1, page_size: int = 20
+        owner_id: str, page: int = 1, page_size: int = 10
     ) -> Tuple[List[dict], int]:
         db = get_database()
         cache_key = f"notes:{owner_id}:page:{page}:size:{page_size}"
@@ -31,27 +46,32 @@ class NoteService:
         if cached:
             return cached["notes"], cached["total"]
 
-        skip = (page - 1) * page_size
-        query = {"owner_id": owner_id}
-        total = await db.notes.count_documents(query)
-        cursor = (
-            db.notes.find(query).sort("created_at", -1).skip(skip).limit(page_size)
-        )
-        notes = []
-        async for note in cursor:
-            notes.append(note_to_response(note))
-
-        # Include shared notes
-        shared_cursor = db.shared_notes.find({"shared_with_user_id": owner_id})
+        # Collect shared note IDs for this user
         shared_note_ids = []
+        shared_cursor = db.shared_notes.find({"shared_with_user_id": owner_id})
         async for shared in shared_cursor:
             shared_note_ids.append(ObjectId(shared["note_id"]))
 
+        # Combined query: owned notes OR shared notes
         if shared_note_ids:
-            shared_notes_cursor = db.notes.find({"_id": {"$in": shared_note_ids}})
-            async for note in shared_notes_cursor:
-                notes.append(note_to_response(note, is_shared=True))
-            total += len(shared_note_ids)
+            combined_query = {
+                "$or": [
+                    {"owner_id": owner_id},
+                    {"_id": {"$in": shared_note_ids}},
+                ]
+            }
+        else:
+            combined_query = {"owner_id": owner_id}
+
+        total = await db.notes.count_documents(combined_query)
+        skip = (page - 1) * page_size
+        cursor = (
+            db.notes.find(combined_query).sort("created_at", -1).skip(skip).limit(page_size)
+        )
+        notes = []
+        async for note in cursor:
+            is_shared = note["owner_id"] != owner_id
+            notes.append(note_to_response(note, is_shared=is_shared))
 
         await redis_cache.set(cache_key, {"notes": notes, "total": total}, ttl=60)
         return notes, total
@@ -135,13 +155,13 @@ class NoteService:
                 {"_id": ObjectId(note_id), "owner_id": owner_id}
             )
         except Exception:
-            raise ValueError("Note not found or you don't own it")
+            raise NoteNotFoundError("Note not found or you don't own it")
         if not note:
-            raise ValueError("Note not found or you don't own it")
+            raise NoteNotFoundError("Note not found or you don't own it")
 
         target_user = await db.users.find_one({"email": share_with_email})
         if not target_user:
-            raise ValueError("User not found")
+            raise UserNotFoundError("User not found")
 
         target_id = str(target_user["_id"])
         if target_id == owner_id:
@@ -151,7 +171,7 @@ class NoteService:
             {"note_id": note_id, "shared_with_user_id": target_id}
         )
         if existing:
-            raise ValueError("Note already shared with this user")
+            raise AlreadySharedError("Note already shared with this user")
 
         await db.shared_notes.insert_one(
             {
@@ -166,7 +186,7 @@ class NoteService:
 
     @staticmethod
     async def search_notes(
-        owner_id: str, query: str, page: int = 1, page_size: int = 20
+        owner_id: str, query: str, page: int = 1, page_size: int = 10
     ) -> Tuple[List[dict], int]:
         db = get_database()
         search_filter = {"owner_id": owner_id, "$text": {"$search": query}}

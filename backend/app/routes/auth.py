@@ -1,16 +1,19 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from app.schemas.auth import UserRegister, UserLogin, TokenResponse
 from app.auth.password import hash_password, verify_password
 from app.auth.jwt_handler import create_access_token
 from app.models.user import create_user_document, user_to_response
 from app.db.mongodb import get_database
+from app.core.limiter import limiter
 from pymongo.errors import DuplicateKeyError
 
 router = APIRouter()
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(data: UserRegister):
+@limiter.limit("5/minute")
+async def register(request: Request, data: UserRegister):
     db = get_database()
     hashed = hash_password(data.password)
     user_doc = create_user_document(email=data.email, hashed_password=hashed)
@@ -29,18 +32,19 @@ async def register(data: UserRegister):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(data: UserLogin):
+@limiter.limit("5/minute")
+async def login(request: Request, data: UserLogin):
     db = get_database()
     user = await db.users.find_one({"email": data.email})
     if not user:
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            content={"message": "Invalid email or password"},
         )
     if not verify_password(data.password, user["hashed_password"]):
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            content={"message": "Invalid email or password"},
         )
     token = create_access_token(
         data={"sub": str(user["_id"]), "email": user["email"]}

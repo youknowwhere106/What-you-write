@@ -1,0 +1,639 @@
+openapi: 3.0.4
+info:
+  title: What-you-write API
+  description: |
+    A premium sticky-notes application with AI-powered summaries, conversational Q&A (Mini-RAG),
+    note sharing, full-text search, dictionary lookup, and color-coded organisation.
+
+    **Tech Stack:** FastAPI + MongoDB + Redis + Celery | Gemini + Mini-RAG + LangGraph | React + Vite + TailwindCSS
+  version: 1.0.0
+  contact:
+    name: Piyush Awasthi
+    email: piyushawasthi106@gmail.com
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Note:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        content:
+          type: string
+        owner_id:
+          type: string
+        summary:
+          type: string
+          nullable: true
+        ai_status:
+          type: string
+          enum: [pending, processing, ready, failed]
+        color:
+          type: string
+          enum: [yellow, pink, blue, green, purple, orange]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        is_shared:
+          type: boolean
+
+    PaginatedNotes:
+      type: object
+      properties:
+        notes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Note"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        created_at:
+          type: string
+          format: date-time
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: bearer
+        user:
+          $ref: "#/components/schemas/User"
+
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ── Authentication ──────────────────────────────────────────────
+
+  /api/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new user
+      description: Create a new account and receive a JWT access token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 6
+                  maxLength: 128
+      responses:
+        "201":
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/login:
+    post:
+      tags: [Authentication]
+      summary: Log in
+      description: Authenticate with email and password to receive a JWT access token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── Notes ───────────────────────────────────────────────────────
+
+  /api/notes:
+    get:
+      tags: [Notes]
+      summary: List all notes
+      description: Retrieve all notes owned by or shared with the authenticated user (paginated).
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated list of notes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedNotes"
+
+    post:
+      tags: [Notes]
+      summary: Create a note
+      description: Create a new note. Automatically triggers AI summary generation in the background via Celery.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, content]
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                content:
+                  type: string
+                  minLength: 1
+                color:
+                  type: string
+                  enum: [yellow, pink, blue, green, purple, orange]
+                  default: yellow
+      responses:
+        "201":
+          description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+
+  /api/notes/{note_id}:
+    get:
+      tags: [Notes]
+      summary: Get a note
+      description: Retrieve a specific note by ID. User must be the owner or the note must be shared with them.
+      parameters:
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Note details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+        "404":
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    put:
+      tags: [Notes]
+      summary: Update a note
+      description: Update an existing note. Re-triggers AI summary generation. Sets ai_status back to pending.
+      parameters:
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                content:
+                  type: string
+                color:
+                  type: string
+                  enum: [yellow, pink, blue, green, purple, orange]
+      responses:
+        "200":
+          description: Note updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+        "404":
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      tags: [Notes]
+      summary: Delete a note
+      description: Delete a note and all associated data (chunks, shared entries, chat history).
+      parameters:
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Note deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Note deleted successfully
+        "404":
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/notes/{note_id}/share:
+    post:
+      tags: [Notes]
+      summary: Share a note
+      description: Share a note with another registered user by their email address.
+      parameters:
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          description: Note shared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Note shared with user@example.com
+        "400":
+          description: Cannot share with self or already shared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Note or user not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── AI (Mini-RAG) ──────────────────────────────────────────────
+
+  /api/notes/{note_id}/ask:
+    post:
+      tags: [AI]
+      summary: Ask AI about a note
+      description: |
+        Ask a question about a specific note using the Mini-RAG pipeline.
+
+        **How it works:**
+        1. The note's content is chunked and embedded when created/updated (Celery background task).
+        2. The LangGraph RAG chain retrieves relevant chunks matching your question.
+        3. Retrieved chunks + chat history are injected as context for Gemini.
+        4. Gemini generates an answer grounded in the note's actual content.
+
+        This keeps answers factual and scoped to what the user wrote, avoiding hallucination.
+      parameters:
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+      responses:
+        "200":
+          description: AI-generated answer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer:
+                    type: string
+                  note_id:
+                    type: string
+        "403":
+          description: No access to this note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: AI processing failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/notes/{note_id}/chat-history:
+    get:
+      tags: [AI]
+      summary: Get chat history
+      description: Retrieve the full conversation history for a note's AI chat.
+      parameters:
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Chat history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note_id:
+                    type: string
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        role:
+                          type: string
+                          enum: [user, assistant]
+                        content:
+                          type: string
+        "404":
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      tags: [AI]
+      summary: Clear chat history
+      description: Delete all chat messages for a specific note.
+      parameters:
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Chat history cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Chat history cleared
+
+  /api/notes/{note_id}/summary:
+    get:
+      tags: [AI]
+      summary: Get note summary
+      description: Retrieve the AI-generated summary of a note along with its processing status.
+      parameters:
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Note summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note_id:
+                    type: string
+                  summary:
+                    type: string
+                  ai_status:
+                    type: string
+                    enum: [pending, processing, ready, failed]
+        "404":
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── Search ─────────────────────────────────────────────────────
+
+  /api/search:
+    get:
+      tags: [Search]
+      summary: Search notes
+      description: Full-text search across all of the authenticated user's notes using MongoDB text index.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedNotes"
+
+  # ── Dictionary ─────────────────────────────────────────────────
+
+  /api/dictionary/{word}:
+    get:
+      tags: [Dictionary]
+      summary: Look up a word
+      description: Get the definition and part of speech for a word. Letters only, max 50 characters.
+      parameters:
+        - name: word
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-zA-Z]+$"
+            maxLength: 50
+      responses:
+        "200":
+          description: Word definition
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  word:
+                    type: string
+                  definition:
+                    type: string
+                  part_of_speech:
+                    type: string
+        "400":
+          description: Invalid word format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Word not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── About ──────────────────────────────────────────────────────
+
+  /about:
+    get:
+      tags: [About]
+      summary: About the developer
+      description: Returns developer info and a description of each feature with the reasoning behind it.
+      security: []
+      responses:
+        "200":
+          description: Developer and feature information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: Piyush Awasthi
+                  email:
+                    type: string
+                    format: email
+                    example: piyushawasthi106@gmail.com
+                  my_features:
+                    type: object
+                    additionalProperties:
+                      type: string
+                    example:
+                      AI Ask (Mini-RAG): "A conversational Q&A feature built on a mini RAG pipeline using LangGraph + Gemini."
+                      AI Summaries: "Automatic note summarisation via Celery background tasks."
+                      Note Sharing: "Share notes with other users by email."
+                      Full-Text Search: "MongoDB text-index powered search."
+                      Dictionary Lookup: "Inline word definition lookup."
+                      Color-Coded Notes: "Six color options for visual organisation."

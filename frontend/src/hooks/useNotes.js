@@ -5,7 +5,13 @@ import toast from 'react-hot-toast'
 export function useNotes(page = 1) {
   return useQuery({
     queryKey: ['notes', page],
-    queryFn: () => notesAPI.getAll(page).then((r) => r.data),
+    queryFn: () =>
+      notesAPI.getAll(page).then((r) => ({
+        notes: r.data,
+        total: parseInt(r.headers['x-total-count'] || '0', 10),
+        page: parseInt(r.headers['x-page'] || '1', 10),
+        page_size: parseInt(r.headers['x-page-size'] || '10', 10),
+      })),
     staleTime: 30_000,
   })
 }
@@ -66,7 +72,13 @@ export function useShareNote() {
 export function useSearchNotes(query) {
   return useQuery({
     queryKey: ['search', query],
-    queryFn: () => notesAPI.search(query).then((r) => r.data),
+    queryFn: () =>
+      notesAPI.search(query).then((r) => ({
+        notes: r.data,
+        total: parseInt(r.headers['x-total-count'] || '0', 10),
+        page: parseInt(r.headers['x-page'] || '1', 10),
+        page_size: parseInt(r.headers['x-page-size'] || '10', 10),
+      })),
     enabled: !!query && query.length > 0,
     staleTime: 10_000,
   })

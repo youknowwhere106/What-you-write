@@ -52,4 +52,4 @@ class NoteListResponse(BaseModel):
 
 
 class ShareNoteRequest(BaseModel):
-    email: str
+    share_with_email: str

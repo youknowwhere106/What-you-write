@@ -3,7 +3,7 @@ import axios from 'axios'
 const API_URL = import.meta.env.VITE_API_URL || ''
 
 const api = axios.create({
-  baseURL: `${API_URL}/api`,
+  baseURL: API_URL,
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -35,13 +35,13 @@ export const authAPI = {
 
 // ─── Notes ───
 export const notesAPI = {
-  getAll: (page = 1, pageSize = 20) =>
+  getAll: (page = 1, pageSize = 10) =>
     api.get('/notes', { params: { page, page_size: pageSize } }),
   getById: (id) => api.get(`/notes/${id}`),
   create: (data) => api.post('/notes', data),
   update: (id, data) => api.put(`/notes/${id}`, data),
   delete: (id) => api.delete(`/notes/${id}`),
-  share: (id, email) => api.post(`/notes/${id}/share`, { email }),
+  share: (id, email) => api.post(`/notes/${id}/share`, { share_with_email: email }),
   search: (q, page = 1) => api.get('/search', { params: { q, page } }),
 }
 

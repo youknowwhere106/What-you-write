@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     MONGODB_URL: str = "mongodb://localhost:27017/whatyouwrite"
     DATABASE_NAME: str = "whatyouwrite"
 
-    JWT_SECRET_KEY: str = "change-me-in-production"
+    JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 

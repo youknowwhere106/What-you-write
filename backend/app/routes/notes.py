@@ -1,28 +1,37 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+import json
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Response
 from app.schemas.notes import (
     NoteCreate,
     NoteUpdate,
     NoteResponse,
-    NoteListResponse,
     ShareNoteRequest,
 )
 from app.services.note_service import note_service
 from app.middleware.auth import get_current_user
-from typing import Dict, Any
+from typing import Dict, Any, List
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/notes", response_model=NoteListResponse)
+@router.get("/notes", response_model=List[NoteResponse])
 async def get_notes(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=100),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     notes, total = await note_service.get_notes(user["id"], page, page_size)
-    return NoteListResponse(notes=notes, total=total, page=page, page_size=page_size)
+    headers = {
+        "X-Total-Count": str(total),
+        "X-Page": str(page),
+        "X-Page-Size": str(page_size),
+    }
+    return Response(
+        content=json.dumps(notes),
+        media_type="application/json",
+        headers=headers,
+    )
 
 
 @router.get("/notes/{note_id}", response_model=NoteResponse)
@@ -81,7 +90,7 @@ async def update_note(
     return note
 
 
-@router.delete("/notes/{note_id}")
+@router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_note(
     note_id: str, user: Dict[str, Any] = Depends(get_current_user)
 ):
@@ -90,7 +99,7 @@ async def delete_note(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Note not found"
         )
-    return {"message": "Note deleted successfully"}
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/notes/{note_id}/share")
@@ -100,9 +109,13 @@ async def share_note(
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     try:
-        result = await note_service.share_note(note_id, user["id"], data.email)
+        result = await note_service.share_note(note_id, user["id"], data.share_with_email)
         return result
+    except note_service.NoteNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except note_service.UserNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except note_service.AlreadySharedError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

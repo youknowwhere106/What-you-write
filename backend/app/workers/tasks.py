@@ -20,10 +20,22 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+_mongo_client: MongoClient = None
+
+
 def _get_sync_db():
-    """Celery workers run synchronously - use pymongo directly."""
-    client = MongoClient(settings.MONGODB_URL)
-    return client[settings.DATABASE_NAME]
+    """Return a shared PyMongo client (singleton per worker process) with connection pooling."""
+    global _mongo_client
+    if _mongo_client is None:
+        _mongo_client = MongoClient(
+            settings.MONGODB_URL,
+            maxPoolSize=10,
+            minPoolSize=2,
+            maxIdleTimeMS=30000,
+            waitQueueTimeoutMS=5000,
+            serverSelectionTimeoutMS=5000,
+        )
+    return _mongo_client[settings.DATABASE_NAME]
 
 
 @celery_app.task(

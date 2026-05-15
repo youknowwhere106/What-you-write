@@ -1,6 +1,7 @@
 from typing import Optional, List, Tuple
 from bson import ObjectId
 from datetime import datetime, timezone
+from pymongo import ReturnDocument, DeleteMany
 from app.db.mongodb import get_database
 from app.db.redis import redis_cache
 from app.models.note import create_note_document, note_to_response
@@ -46,11 +47,11 @@ class NoteService:
         if cached:
             return cached["notes"], cached["total"]
 
-        # Collect shared note IDs for this user
-        shared_note_ids = []
-        shared_cursor = db.shared_notes.find({"shared_with_user_id": owner_id})
-        async for shared in shared_cursor:
-            shared_note_ids.append(ObjectId(shared["note_id"]))
+        # Collect shared note IDs for this user (project only note_id to reduce data transfer)
+        shared_docs = await db.shared_notes.find(
+            {"shared_with_user_id": owner_id}, {"note_id": 1, "_id": 0}
+        ).to_list(None)
+        shared_note_ids = [ObjectId(s["note_id"]) for s in shared_docs]
 
         # Combined query: owned notes OR shared notes
         if shared_note_ids:
@@ -107,24 +108,32 @@ class NoteService:
     @staticmethod
     async def update_note(note_id: str, owner_id: str, update_data: dict) -> Optional[dict]:
         db = get_database()
-        try:
-            note = await db.notes.find_one(
-                {"_id": ObjectId(note_id), "owner_id": owner_id}
-            )
-        except Exception:
-            return None
-        if not note:
-            return None
-
         update_data = {k: v for k, v in update_data.items() if v is not None}
+
+        # If nothing to update, fetch and return current doc (ownership verified via query filter)
         if not update_data:
-            return note_to_response(note)
+            try:
+                note = await db.notes.find_one(
+                    {"_id": ObjectId(note_id), "owner_id": owner_id}
+                )
+            except Exception:
+                return None
+            return note_to_response(note) if note else None
 
         update_data["updated_at"] = datetime.now(timezone.utc)
         update_data["ai_status"] = "pending"
 
-        await db.notes.update_one({"_id": ObjectId(note_id)}, {"$set": update_data})
-        updated = await db.notes.find_one({"_id": ObjectId(note_id)})
+        try:
+            updated = await db.notes.find_one_and_update(
+                {"_id": ObjectId(note_id), "owner_id": owner_id},
+                {"$set": update_data},
+                return_document=ReturnDocument.AFTER,
+            )
+        except Exception:
+            return None
+        if not updated:
+            return None
+
         await redis_cache.delete(f"note:{note_id}")
         await redis_cache.delete_pattern(f"notes:{owner_id}:*")
         return note_to_response(updated)
@@ -140,9 +149,13 @@ class NoteService:
             return False
         if result.deleted_count == 0:
             return False
-        await db.note_chunks.delete_many({"note_id": note_id})
-        await db.shared_notes.delete_many({"note_id": note_id})
-        await db.ai_chats.delete_many({"note_id": note_id})
+        # Clean up related documents in parallel across collections
+        import asyncio
+        await asyncio.gather(
+            db.note_chunks.delete_many({"note_id": note_id}),
+            db.shared_notes.delete_many({"note_id": note_id}),
+            db.ai_chats.delete_many({"note_id": note_id}),
+        )
         await redis_cache.delete(f"note:{note_id}")
         await redis_cache.delete_pattern(f"notes:{owner_id}:*")
         return True

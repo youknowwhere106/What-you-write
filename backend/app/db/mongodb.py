@@ -15,7 +15,14 @@ mongodb = MongoDB()
 
 async def connect_to_mongo():
     logger.info("Connecting to MongoDB...")
-    mongodb.client = AsyncIOMotorClient(settings.MONGODB_URL)
+    mongodb.client = AsyncIOMotorClient(
+        settings.MONGODB_URL,
+        maxPoolSize=50,
+        minPoolSize=5,
+        maxIdleTimeMS=30000,
+        waitQueueTimeoutMS=5000,
+        serverSelectionTimeoutMS=5000,
+    )
     mongodb.db = mongodb.client[settings.DATABASE_NAME]
     await create_indexes()
     logger.info("Connected to MongoDB.")
@@ -37,6 +44,8 @@ async def create_indexes():
     await db.note_chunks.create_index("note_id")
     await db.shared_notes.create_index("shared_with_user_id")
     await db.shared_notes.create_index("note_id")
+    await db.shared_notes.create_index([("note_id", 1), ("shared_with_user_id", 1)], unique=True)
+    await db.notes.create_index([("owner_id", 1), ("created_at", -1)])
     await db.ai_chats.create_index([("note_id", 1), ("user_id", 1)])
 
 

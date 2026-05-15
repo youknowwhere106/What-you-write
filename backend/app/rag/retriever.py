@@ -12,10 +12,7 @@ async def retrieve_relevant_chunks(
     """Retrieve the most relevant chunks for a query using cosine similarity."""
     db = get_database()
 
-    chunks_cursor = db.note_chunks.find({"note_id": note_id})
-    chunks = []
-    async for chunk in chunks_cursor:
-        chunks.append(chunk)
+    chunks = await db.note_chunks.find({"note_id": note_id}).to_list(None)
 
     if not chunks:
         return []

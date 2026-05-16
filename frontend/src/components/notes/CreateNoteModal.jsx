@@ -93,7 +93,7 @@ export default function CreateNoteModal() {
             className="w-full max-w-2xl glass-strong rounded-2xl overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b border-white/5">
+            <div className="flex items-center justify-between p-5 border-b border-white/15">
               <h2 className="text-lg font-semibold text-white">Create Note</h2>
               <button
                 onClick={closeCreateModal}
@@ -111,7 +111,7 @@ export default function CreateNoteModal() {
                 placeholder="Note title..."
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-purple-500/50 text-lg font-[family-name:var(--font-handwriting)]"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-purple-500/50 text-lg font-[family-name:var(--font-handwriting)]"
               />
 
               {/* Color picker */}
@@ -132,7 +132,7 @@ export default function CreateNoteModal() {
 
               {/* Toolbar */}
               {editor && (
-                <div className="flex items-center gap-1 p-2 bg-white/3 rounded-xl border border-white/5">
+                <div className="flex items-center gap-1 p-2 bg-white/10 rounded-xl border border-white/15">
                   <ToolbarBtn
                     onClick={() => editor.chain().focus().toggleBold().run()}
                     active={editor.isActive('bold')}
@@ -188,13 +188,13 @@ export default function CreateNoteModal() {
               )}
 
               {/* Editor */}
-              <div className="tiptap-editor bg-white/5 border border-white/10 rounded-xl min-h-[200px] text-white">
+              <div className="tiptap-editor bg-white/10 border border-white/20 rounded-xl min-h-[200px] text-white">
                 <EditorContent editor={editor} />
               </div>
             </div>
 
             {/* Footer */}
-            <div className="flex justify-end gap-3 p-5 border-t border-white/5">
+            <div className="flex justify-end gap-3 p-5 border-t border-white/15">
               <button
                 onClick={closeCreateModal}
                 className="px-5 py-2.5 rounded-xl text-sm text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"

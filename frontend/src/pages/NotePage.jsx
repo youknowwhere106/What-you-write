@@ -62,6 +62,19 @@ function extractWord(text) {
   return cleaned.toLowerCase()
 }
 
+// Expand from a text node + offset to the full word boundaries using regex
+function expandToWord(textNode, offset) {
+  if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return ''
+  const text = textNode.textContent || ''
+  if (!text || offset > text.length) return ''
+  // Find word boundaries around the offset
+  let start = offset
+  let end = offset
+  while (start > 0 && /[a-zA-Z]/.test(text[start - 1])) start--
+  while (end < text.length && /[a-zA-Z]/.test(text[end])) end++
+  return text.slice(start, end)
+}
+
 export default function NotePage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -86,6 +99,8 @@ export default function NotePage() {
   const [showMeaning, setShowMeaning] = useState(false)
   const [meaningPos, setMeaningPos] = useState(null)
   const editorWrapperRef = useRef(null)
+  const dblclickTimestampRef = useRef(0)
+  const showMeaningRef = useRef(false)
 
   const { data: dictData, isLoading: dictLoading } = useDictionary(lookupWord)
 
@@ -114,6 +129,11 @@ export default function NotePage() {
     }
   }, [isEditing, editor])
 
+  // Keep showMeaningRef in sync so event handlers always read fresh value
+  useEffect(() => {
+    showMeaningRef.current = showMeaning
+  }, [showMeaning])
+
   // ─── Double-click word detection ───
   // We use native dblclick instead of TipTap's selectionUpdate because:
   // 1. dblclick reliably selects exactly one word
@@ -124,34 +144,74 @@ export default function NotePage() {
     const editorEl = editorWrapperRef.current?.querySelector('.ProseMirror')
     if (!editorEl) return
 
+    const resolveWord = () => {
+      const domSelection = window.getSelection()
+      if (!domSelection || domSelection.rangeCount === 0) return null
+
+      // Strategy 1: native selection text
+      const text = domSelection.toString()
+      const word1 = extractWord(text)
+      if (word1) return { word: word1, range: domSelection.getRangeAt(0) }
+
+      // Strategy 2: expand from anchor node + offset to word boundaries
+      const anchor = domSelection.anchorNode
+      const offset = domSelection.anchorOffset
+      const expanded = expandToWord(anchor, offset)
+      const word2 = extractWord(expanded)
+      if (word2) return { word: word2, range: domSelection.getRangeAt(0) }
+
+      // Strategy 3: fall back to TipTap's selection
+      const { from, to } = editor.state.selection
+      if (from !== to) {
+        const tiptapText = editor.state.doc.textBetween(from, to, ' ')
+        const word3 = extractWord(tiptapText)
+        if (word3) return { word: word3, range: domSelection.getRangeAt(0) }
+      }
+
+      return null
+    }
+
     const handleDoubleClick = () => {
-      // Small delay to let the browser finalize the double-click selection
+      // Record timestamp so click handler can ignore trailing clicks
+      dblclickTimestampRef.current = Date.now()
+
+      // Use double-rAF to ensure the browser has finalized the selection
       requestAnimationFrame(() => {
-        const domSelection = window.getSelection()
-        if (!domSelection || domSelection.rangeCount === 0) return
+        requestAnimationFrame(() => {
+          const result = resolveWord()
+          if (!result) return
 
-        const text = domSelection.toString()
-        const word = extractWord(text)
-        if (!word) return
+          const { word, range } = result
+          const rect = range.getBoundingClientRect()
 
-        setSelectedWord(word)
+          // vx = center of the word, vy = just above the word
+          const vx = rect.left + rect.width / 2
+          const vy = rect.top - 10
 
-        // Calculate viewport coordinates for the toolbar
-        const range = domSelection.getRangeAt(0)
-        const rect = range.getBoundingClientRect()
+          // Reset toolbar state before setting new values so React always re-renders,
+          // even if the same word is double-clicked consecutively
+          setShowToolbar(false)
+          setToolbarPos(null)
 
-        // vx = center of the word, vy = just above the word
-        const vx = rect.left + rect.width / 2
-        const vy = rect.top - 10
-
-        setToolbarPos({ vx, vy })
-        setShowToolbar(true)
+          // Use microtask to ensure the reset above is batched separately
+          // so React sees a state change from null→value
+          queueMicrotask(() => {
+            setSelectedWord(word)
+            setToolbarPos({ vx, vy })
+            setShowToolbar(true)
+          })
+        })
       })
     }
 
     // Hide toolbar on single click / cursor move (but not when popups are open)
     const handleClick = () => {
-      if (!showMeaning) {
+      // Ignore click events that are part of the dblclick gesture
+      // (dblclick produces: click → click → dblclick — the trailing clicks arrive
+      // within ~50ms of the dblclick event)
+      if (Date.now() - dblclickTimestampRef.current < 100) return
+
+      if (!showMeaningRef.current) {
         setShowToolbar(false)
       }
     }
@@ -162,11 +222,14 @@ export default function NotePage() {
       editorEl.removeEventListener('dblclick', handleDoubleClick)
       editorEl.removeEventListener('click', handleClick)
     }
-  }, [editor, showMeaning])
+  }, [editor])
 
   // ─── Dismiss on outside click ───
   useEffect(() => {
-    const handleClick = (e) => {
+    const handleOutsideClick = (e) => {
+      // Ignore if part of a dblclick gesture
+      if (Date.now() - dblclickTimestampRef.current < 100) return
+
       if (!editorWrapperRef.current) return
       const target = e.target
       // Don't dismiss if clicking inside toolbar or meaning popup
@@ -176,16 +239,16 @@ export default function NotePage() {
       ) return
 
       // Dismiss meaning UI if clicking elsewhere
-      if (showMeaning) {
+      if (showMeaningRef.current) {
         setShowMeaning(false)
         setShowToolbar(false)
         setLookupWord('')
       }
     }
 
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showMeaning])
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
 
   // ─── Auto-dismiss meaning popup after 2 seconds ───
   useEffect(() => {

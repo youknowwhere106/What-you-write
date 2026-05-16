@@ -15,8 +15,6 @@ RUN pip install --no-cache-dir torch --extra-index-url https://download.pytorch.
 
 COPY . .
 
-RUN chmod +x /app/worker_start.sh
-
 # Pre-download the sentence-transformers model into the image so there is
 # zero HuggingFace download delay at container startup.
 # The model path is baked into the layer cache.

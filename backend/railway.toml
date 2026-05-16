@@ -7,3 +7,6 @@ restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 healthcheckPath = "/health"
 healthcheckTimeout = 300
+# Give uvicorn time to bind before Railway starts probing /health.
+# Covers lifespan startup (MongoDB index creation, Redis ping).
+startupDelay = 10

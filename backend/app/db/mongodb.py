@@ -15,17 +15,23 @@ mongodb = MongoDB()
 
 async def connect_to_mongo():
     logger.info("Connecting to MongoDB...")
-    mongodb.client = AsyncIOMotorClient(
-        settings.MONGODB_URL,
-        maxPoolSize=50,
-        minPoolSize=5,
-        maxIdleTimeMS=30000,
-        waitQueueTimeoutMS=5000,
-        serverSelectionTimeoutMS=5000,
-    )
-    mongodb.db = mongodb.client[settings.DATABASE_NAME]
-    await create_indexes()
-    logger.info("Connected to MongoDB.")
+    try:
+        mongodb.client = AsyncIOMotorClient(
+            settings.MONGODB_URL,
+            maxPoolSize=50,
+            minPoolSize=5,
+            maxIdleTimeMS=30000,
+            waitQueueTimeoutMS=5000,
+            # Reduced from 5000 ms so a missing/unreachable MongoDB does not
+            # block the lifespan startup (and therefore the healthcheck) for 5s.
+            serverSelectionTimeoutMS=2000,
+        )
+        mongodb.db = mongodb.client[settings.DATABASE_NAME]
+        await create_indexes()
+        logger.info("Connected to MongoDB.")
+    except Exception as exc:
+        logger.error("MongoDB connection failed at startup: %s", exc)
+        # Server continues — routes that need DB will fail individually.
 
 
 async def close_mongo_connection():

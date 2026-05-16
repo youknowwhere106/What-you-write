@@ -11,12 +11,19 @@ class RedisCache:
     _client: Optional[aioredis.Redis] = None
 
     async def connect(self):
-        self._client = aioredis.from_url(
-            settings.REDIS_URL,
-            encoding="utf-8",
-            decode_responses=True,
-        )
-        logger.info("Connected to Redis.")
+        try:
+            self._client = aioredis.from_url(
+                settings.REDIS_URL,
+                encoding="utf-8",
+                decode_responses=True,
+            )
+            # Verify the connection is actually reachable.
+            await self._client.ping()
+            logger.info("Connected to Redis.")
+        except Exception as exc:
+            logger.error("Redis connection failed at startup: %s", exc)
+            self._client = None
+            # Server continues — cache operations are no-ops when _client is None.
 
     async def disconnect(self):
         if self._client:

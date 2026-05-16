@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from enum import Enum
 
@@ -27,7 +27,7 @@ class NoteCreate(BaseModel):
 
 class NoteUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=200)
-    content: Optional[str] = None
+    content: Optional[str] = Field(None, min_length=1)
     color: Optional[NoteColor] = None
 
 
@@ -52,4 +52,4 @@ class NoteListResponse(BaseModel):
 
 
 class ShareNoteRequest(BaseModel):
-    share_with_email: str
+    share_with_email: EmailStr

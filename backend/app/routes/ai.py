@@ -4,11 +4,38 @@ from app.middleware.auth import get_current_user
 from app.db.mongodb import get_database
 from app.rag.retriever import get_chat_history
 from bson import ObjectId
+from bson.errors import InvalidId
 from typing import Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+async def _verify_note_access(note_id: str, user_id: str):
+    """Verify note exists and user has access (owner or shared). Returns the note document."""
+    db = get_database()
+    try:
+        oid = ObjectId(note_id)
+    except (InvalidId, Exception):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Note not found"
+        )
+    note = await db.notes.find_one({"_id": oid})
+    if not note:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Note not found"
+        )
+    if note["owner_id"] != user_id:
+        shared = await db.shared_notes.find_one(
+            {"note_id": note_id, "shared_with_user_id": user_id}
+        )
+        if not shared:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have access to this note",
+            )
+    return note
 
 
 @router.post("/notes/{note_id}/ask", response_model=AskAIResponse)
@@ -17,25 +44,7 @@ async def ask_ai(
     data: AskAIRequest,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    db = get_database()
-
-    # Verify note access
-    note = await db.notes.find_one({"_id": ObjectId(note_id)})
-    if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Note not found"
-        )
-
-    is_owner = note["owner_id"] == user["id"]
-    if not is_owner:
-        shared = await db.shared_notes.find_one(
-            {"note_id": note_id, "shared_with_user_id": user["id"]}
-        )
-        if not shared:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have access to this note",
-            )
+    note = await _verify_note_access(note_id, user["id"])
 
     # Run the LangGraph RAG chain
     try:
@@ -68,13 +77,7 @@ async def get_note_chat_history(
     note_id: str,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    db = get_database()
-    note = await db.notes.find_one({"_id": ObjectId(note_id)})
-    if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Note not found"
-        )
-
+    await _verify_note_access(note_id, user["id"])
     messages = await get_chat_history(note_id, user["id"])
     return ChatHistoryResponse(
         note_id=note_id,
@@ -87,6 +90,7 @@ async def clear_chat_history(
     note_id: str,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _verify_note_access(note_id, user["id"])
     db = get_database()
     await db.ai_chats.delete_one({"note_id": note_id, "user_id": user["id"]})
     return {"message": "Chat history cleared"}
@@ -97,12 +101,7 @@ async def get_note_summary(
     note_id: str,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    db = get_database()
-    note = await db.notes.find_one({"_id": ObjectId(note_id)})
-    if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Note not found"
-        )
+    note = await _verify_note_access(note_id, user["id"])
     return {
         "note_id": note_id,
         "summary": note.get("summary", ""),

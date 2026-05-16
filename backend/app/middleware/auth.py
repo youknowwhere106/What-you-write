@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.auth.jwt_handler import decode_access_token
 from app.db.mongodb import get_database
 from bson import ObjectId
+from bson.errors import InvalidId
 from typing import Dict, Any
 
 security = HTTPBearer(auto_error=False)
@@ -31,8 +32,15 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
+    try:
+        oid = ObjectId(user_id)
+    except (InvalidId, Exception):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+        )
     db = get_database()
-    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    user = await db.users.find_one({"_id": oid})
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

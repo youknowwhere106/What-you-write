@@ -139,25 +139,38 @@ class NoteService:
         return note_to_response(updated)
 
     @staticmethod
-    async def delete_note(note_id: str, owner_id: str) -> bool:
+    async def delete_note(note_id: str, user_id: str) -> bool:
         db = get_database()
         try:
-            result = await db.notes.delete_one(
-                {"_id": ObjectId(note_id), "owner_id": owner_id}
-            )
+            oid = ObjectId(note_id)
         except Exception:
             return False
-        if result.deleted_count == 0:
-            return False
-        # Clean up related documents in parallel across collections
-        import asyncio
-        await asyncio.gather(
-            db.note_chunks.delete_many({"note_id": note_id}),
-            db.shared_notes.delete_many({"note_id": note_id}),
-            db.ai_chats.delete_many({"note_id": note_id}),
+
+        # Try owner deletion first
+        result = await db.notes.delete_one({"_id": oid, "owner_id": user_id})
+        if result.deleted_count > 0:
+            # Owner deleted — clean up all related documents
+            import asyncio
+            await asyncio.gather(
+                db.note_chunks.delete_many({"note_id": note_id}),
+                db.shared_notes.delete_many({"note_id": note_id}),
+                db.ai_chats.delete_many({"note_id": note_id}),
+            )
+            await redis_cache.delete(f"note:{note_id}")
+            await redis_cache.delete_pattern(f"notes:{user_id}:*")
+            return True
+
+        # Not the owner — check if it's shared with this user and unlink
+        shared = await db.shared_notes.find_one(
+            {"note_id": note_id, "shared_with_user_id": user_id}
         )
-        await redis_cache.delete(f"note:{note_id}")
-        await redis_cache.delete_pattern(f"notes:{owner_id}:*")
+        if not shared:
+            return False
+
+        await db.shared_notes.delete_one(
+            {"note_id": note_id, "shared_with_user_id": user_id}
+        )
+        await redis_cache.delete_pattern(f"notes:{user_id}:*")
         return True
 
     @staticmethod

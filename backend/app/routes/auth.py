@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import JSONResponse
 from app.schemas.auth import UserRegister, UserLogin, TokenResponse
 from app.auth.password import hash_password, verify_password
 from app.auth.jwt_handler import create_access_token
@@ -36,15 +35,10 @@ async def register(request: Request, data: UserRegister):
 async def login(request: Request, data: UserLogin):
     db = get_database()
     user = await db.users.find_one({"email": data.email})
-    if not user:
-        return JSONResponse(
+    if not user or not verify_password(data.password, user["hashed_password"]):
+        raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            content={"message": "Invalid email or password"},
-        )
-    if not verify_password(data.password, user["hashed_password"]):
-        return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            content={"message": "Invalid email or password"},
+            detail="Invalid email or password",
         )
     token = create_access_token(
         data={"sub": str(user["_id"]), "email": user["email"]}

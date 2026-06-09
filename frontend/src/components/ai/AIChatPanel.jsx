@@ -6,6 +6,9 @@ import {
   Sparkles,
   Trash2,
   MessageCircle,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useAskAI, useChatHistory, useClearChat } from '@/hooks/useAI'
@@ -24,6 +27,8 @@ export default function AIChatPanel() {
   const noteId = selectedNote?.id
   const [input, setInput] = useState('')
   const [streamingAnswer, setStreamingAnswer] = useState('')
+  const [aiError, setAiError] = useState(null)
+  const [tracebackOpen, setTracebackOpen] = useState(false)
   const messagesEndRef = useRef(null)
 
   const askAI = useAskAI(noteId)
@@ -41,13 +46,26 @@ export default function AIChatPanel() {
     if (!question || !noteId) return
     setInput('')
     setStreamingAnswer('')
+    setAiError(null)
+    setTracebackOpen(false)
 
     askAI.mutate(question, {
-      onSuccess: (data) => {
+      onSuccess: () => {
         setStreamingAnswer('')
-        // The chat history will be refetched via invalidation
       },
-      onError: () => setStreamingAnswer(''),
+      onError: (err) => {
+        setStreamingAnswer('')
+        const detail = err.response?.data?.detail
+        if (detail && typeof detail === 'object') {
+          setAiError(detail)
+        } else {
+          setAiError({
+            error: err.message || 'Request failed',
+            exception_type: 'NetworkError',
+            traceback: null,
+          })
+        }
+      },
     })
   }
 
@@ -174,6 +192,48 @@ export default function AIChatPanel() {
                       className="w-2 h-2 bg-purple-400 rounded-full"
                     />
                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {aiError && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex justify-start"
+              >
+                <div className="max-w-[95%] rounded-2xl rounded-bl-sm overflow-hidden border border-red-500/30 bg-red-950/40 text-sm">
+                  <div className="flex items-start gap-2 px-4 py-3">
+                    <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-red-300 font-medium">
+                        {aiError.exception_type}
+                      </p>
+                      <p className="text-red-400/80 text-xs mt-0.5 break-words">
+                        {aiError.error}
+                      </p>
+                    </div>
+                  </div>
+                  {aiError.traceback && (
+                    <>
+                      <button
+                        onClick={() => setTracebackOpen((v) => !v)}
+                        className="w-full flex items-center justify-between px-4 py-1.5 text-xs text-red-500/70 hover:text-red-400 border-t border-red-500/20 hover:bg-red-950/60 transition-colors"
+                      >
+                        <span>Traceback</span>
+                        {tracebackOpen ? (
+                          <ChevronUp className="w-3 h-3" />
+                        ) : (
+                          <ChevronDown className="w-3 h-3" />
+                        )}
+                      </button>
+                      {tracebackOpen && (
+                        <pre className="px-4 py-3 text-xs text-red-400/60 font-mono overflow-x-auto whitespace-pre-wrap border-t border-red-500/20 max-h-64 overflow-y-auto">
+                          {aiError.traceback}
+                        </pre>
+                      )}
+                    </>
+                  )}
                 </div>
               </motion.div>
             )}

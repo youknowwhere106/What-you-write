@@ -12,6 +12,7 @@ Flow on note create/update:
 
 import re
 import logging
+import traceback as tb_module
 from bson import ObjectId
 from pymongo import MongoClient
 from app.workers.celery_app import celery_app
@@ -95,26 +96,45 @@ def process_note_ai(self, note_id: str):
 
         # --- Step 2: Generate summary via Gemini ---
         summary = None
-        if settings.GEMINI_API_KEY:
+        summary_failed = False
+        summary_error_info = {}
+
+        if not settings.GEMINI_API_KEY:
+            logger.warning(f"Note {note_id}: GEMINI_API_KEY not set — summary generation skipped")
+        else:
             try:
                 from app.services.gemini_service import generate_summary
                 summary = generate_summary(clean_content)
             except Exception as e:
-                logger.error(f"Summary generation failed for note {note_id}: {e}")
-                summary = None
+                summary_failed = True
+                summary_error_info = {
+                    "ai_error": str(e),
+                    "ai_error_type": type(e).__name__,
+                    "ai_error_traceback": tb_module.format_exc()[-3000:],
+                }
+                logger.exception(f"Summary generation failed for note {note_id}")
 
         # --- Step 3: Update note with results ---
-        update = {"ai_status": "ready"}
-        if summary:
-            update["summary"] = summary
+        if summary_failed:
+            db.notes.update_one(
+                {"_id": ObjectId(note_id)},
+                {"$set": {"summary": None, "ai_status": "failed", **summary_error_info}},
+            )
+            logger.error(
+                f"Note {note_id}: summary error persisted to MongoDB — "
+                f"{summary_error_info['ai_error_type']}: {summary_error_info['ai_error']}"
+            )
+            return {"status": "failed", "note_id": note_id, **summary_error_info}
 
-        db.notes.update_one({"_id": ObjectId(note_id)}, {"$set": update})
-
-        logger.info(f"Note {note_id}: AI processing complete")
+        db.notes.update_one(
+            {"_id": ObjectId(note_id)},
+            {"$set": {"ai_status": "ready", "summary": summary}},
+        )
+        logger.info(f"Note {note_id}: AI processing complete, summary={'set' if summary else 'null'}")
         return {"status": "ready", "note_id": note_id, "word_count": word_count}
 
     except Exception as exc:
-        logger.error(f"AI processing failed for note {note_id}: {exc}")
+        logger.exception(f"AI processing failed for note {note_id}")
         db.notes.update_one(
             {"_id": ObjectId(note_id)}, {"$set": {"ai_status": "failed"}}
         )

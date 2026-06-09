@@ -1,3 +1,5 @@
+import traceback as tb_module
+
 from fastapi import APIRouter, HTTPException, status, Depends
 from app.schemas.ai import AskAIRequest, AskAIResponse, ChatHistoryResponse
 from app.middleware.auth import get_current_user
@@ -65,10 +67,14 @@ async def ask_ai(
         )
         return AskAIResponse(answer=result["answer"], note_id=note_id)
     except Exception as e:
-        logger.error(f"AI ask failed for note {note_id}: {e}")
+        logger.exception(f"AI ask failed for note {note_id}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="AI processing failed. Please try again.",
+            detail={
+                "error": str(e),
+                "exception_type": type(e).__name__,
+                "traceback": tb_module.format_exc(),
+            },
         )
 
 

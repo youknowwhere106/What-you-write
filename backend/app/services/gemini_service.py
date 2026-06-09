@@ -17,7 +17,7 @@ def _ensure_configured():
 def generate_summary(content: str) -> str:
     """Generate a concise summary of note content."""
     _ensure_configured()
-    model_name = "gemini-2.0-flash"
+    model_name = "gemini-3.5-flash"
     model = genai.GenerativeModel(model_name)
     prompt = (
         "Summarize the following note in 1-2 concise sentences. "

@@ -1,5 +1,12 @@
 from pydantic_settings import BaseSettings
+from pydantic import model_validator
 from typing import List
+from urllib.parse import urlparse, urlunparse
+
+
+def _redis_db(url: str, db: int) -> str:
+    parsed = urlparse(url)
+    return urlunparse(parsed._replace(path=f"/{db}"))
 
 
 class Settings(BaseSettings):
@@ -17,8 +24,16 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
 
     REDIS_URL: str = "redis://localhost:6379/0"
-    CELERY_BROKER_URL: str = "redis://localhost:6379/1"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
+    CELERY_BROKER_URL: str = ""
+    CELERY_RESULT_BACKEND: str = ""
+
+    @model_validator(mode="after")
+    def derive_celery_urls(self):
+        if not self.CELERY_BROKER_URL:
+            self.CELERY_BROKER_URL = _redis_db(self.REDIS_URL, 1)
+        if not self.CELERY_RESULT_BACKEND:
+            self.CELERY_RESULT_BACKEND = _redis_db(self.REDIS_URL, 2)
+        return self
 
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://what-you-write.vercel.app"
 

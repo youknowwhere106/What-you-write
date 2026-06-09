@@ -70,7 +70,7 @@ def ask_question(
 ) -> str:
     """Answer a question about a note using RAG context."""
     _ensure_configured()
-    model_name = "gemini-2.0-flash"
+    model_name = "gemini-3.5-flash"
     model = genai.GenerativeModel(model_name)
 
     chunks_text = "\n".join(
